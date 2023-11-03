@@ -1,0 +1,9 @@
+{
+  "project": {
+    "url": "https://example.com",
+    "api": "https://api.example.com",
+    "cdn": "https://cdn.example.com",
+    "secretKey": "Something Random",
+    "port": 3000
+  }
+}
