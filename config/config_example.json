@@ -5,5 +5,16 @@
     "cdn": "https://cdn.example.com",
     "secretKey": "Something Random",
     "port": 3000
+  },
+  "redis": {
+    "host": "localhost",
+    "port": 6379,
+    "username": "USERNAME",
+    "password": "PASSWORD"
+  },
+  "session": {
+    "secret": "SESSION SECRET",
+    "resave": false,
+    "saveUninitialized": false
   }
 }
