@@ -85,27 +85,40 @@ io.on("connection", async (socket) => {
     });
   });
 
-  if (!req.session.userid) return socket.disconnect();
+  socket.use((__, next) => {
+    if (!req.session.userid) {
+      socket.emit("connection:unauthorized");
+    } else {
+      next();
+    }
+  });
 
   const userid = req.session.userid;
-  const id = await client.get(userid);
+  const prevSid = await client.get(`uid:${userid}`);
 
-  if (id) {
+  if (prevSid) {
     signale.conflict(`User ${userid} is already connected, disconnecting...`);
-    io.to(id).emit("connection:conflict");
-    await client.del(id);
-    await client.del(userid);
+    io.to(prevSid).emit("connection:conflict");
+    await client.del(`uid:${userid}`);
+    await client.del(`sid:${prevSid}`);
   }
 
   signale.connect(`User ${userid} connected with id ${socket.id}.`);
-  await client.set(`${userid}`, `${socket.id}`);
-  await client.set(`${socket.id}`, `${userid}`);
+  await client.set(`uid:${userid}`, `${socket.id}`);
+  await client.set(`sid:${socket.id}`, `${userid}`);
   io.emit("user:online", userid);
 
+  socket.on("ping", async () => {
+    socket.emit("pong");
+  });
+
   socket.on("disconnect", async () => {
+    const prevUid = await client.get(`sid:${socket.id}`);
+    if (prevUid) {
+      await client.del(`uid:${userid}`);
+      await client.del(`sid:${socket.id}`);
+    }
     signale.disconnect(`User ${userid} disconnected with id ${socket.id}.`);
-    await client.del(`${userid}`);
-    await client.del(`${socket.id}`);
   });
 });
 
