@@ -1,7 +1,7 @@
 {
   "name": "urlate-v3l-game",
   "version": "1.0.0",
-  "description": "WS based game server for URLATE",
+  "description": "Socket.IO based game server for URLATE",
   "main": "src/",
   "scripts": {
     "build": "tsc",
