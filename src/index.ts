@@ -64,6 +64,10 @@ const sessionMiddleware = session({
 
 io.engine.use(sessionMiddleware);
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(sessionMiddleware);
+
 client.on("connect", () => {
   signale.success("Connected to redis server.");
 });
@@ -117,6 +121,7 @@ io.on("connection", async (socket) => {
     if (prevUid) {
       await client.del(`uid:${userid}`);
       await client.del(`sid:${socket.id}`);
+      io.emit("user:offline", userid);
     }
     signale.disconnect(`User ${userid} disconnected with id ${socket.id}.`);
   });
@@ -124,6 +129,28 @@ io.on("connection", async (socket) => {
 
 app.get("/", (req, res) => {
   res.send("Hello from game server!");
+});
+
+app.post("/emit/achievement", async (req, res) => {
+  const sid = await client.get(`uid:${req.body.userid}`);
+  if (req.body.secret !== config.project.secretKey) {
+    res.status(400).json({
+      result: "failed",
+      error: "Authorize failed",
+      description: "Project secret key is not vaild.",
+    });
+    return;
+  }
+  if (!sid) {
+    res.status(400).json({
+      result: "failed",
+      error: "User not found",
+      description: "User is not connected to game server.",
+    });
+    return;
+  }
+  io.to(sid).emit(`achievement`, req.body.achievement);
+  res.status(200).json({ result: "sent" });
 });
 
 httpServer.listen(config.project.port, () => {
