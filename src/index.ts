@@ -149,7 +149,7 @@ app.post("/emit/achievement", async (req, res) => {
     });
     return;
   }
-  io.to(sid).emit(`achievement`, req.body.achievement);
+  io.to(sid).emit(`achievement`, JSON.stringify(req.body.achievement));
   res.status(200).json({ result: "sent" });
 });
 
