@@ -10,13 +10,7 @@ const config = require(__dirname + "/../config/config.json");
 
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer, {
-  cors: {
-    origin: [config.project.url],
-    methods: ["GET", "POST"],
-    credentials: true,
-  },
-});
+const io = new Server(httpServer);
 
 const options = {
   disabled: false,
