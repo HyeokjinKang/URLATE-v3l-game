@@ -3,7 +3,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { Signale } from "signale";
 import { createClient } from "redis";
-import RedisStore from "connect-redis";
+import { RedisStore } from "connect-redis";
 import session from "express-session";
 
 const config = require(__dirname + "/../config/config.json");

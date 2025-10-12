@@ -18,22 +18,22 @@
     "url": "https://github.com/HyeokjinKang/URLATE-v3l-game/issues"
   },
   "dependencies": {
-    "connect-redis": "^7.1.0",
-    "express": "^4.18.2",
-    "express-session": "^1.17.3",
-    "redis": "^4.6.10",
-    "socket.io": "^4.7.2",
-    "tsc-watch": "^6.0.4"
+    "connect-redis": "^9.0.0",
+    "express": "^5.1.0",
+    "express-session": "^1.18.2",
+    "redis": "^5.8.3",
+    "socket.io": "^4.8.1",
+    "tsc-watch": "^7.2.0"
   },
   "devDependencies": {
-    "@types/express": "^4.17.20",
-    "@types/express-session": "^1.17.9",
-    "@types/node": "^20.8.10",
-    "@types/signale": "^1.4.6",
-    "eslint": "^8.52.0",
-    "prettier": "^3.0.3",
+    "@types/express": "^5.0.3",
+    "@types/express-session": "^1.18.2",
+    "@types/node": "^24.7.2",
+    "@types/signale": "^1.4.7",
+    "eslint": "^9.37.0",
+    "prettier": "^3.6.2",
     "signale": "^1.4.0",
     "supervisor": "^0.12.0",
-    "typescript": "^5.2.2"
+    "typescript": "^5.9.3"
   }
 }
