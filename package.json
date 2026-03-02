@@ -6,7 +6,9 @@
   "scripts": {
     "build": "tsc",
     "auto-build": "tsc-watch",
-    "start": "supervisor dist/index.js"
+    "dev": "supervisor dist/index.js",
+    "start": "pm2 start ecosystem.config.js",
+    "stop": "pm2 stop URLATE-v3l-game"
   },
   "repository": {
     "type": "git",
