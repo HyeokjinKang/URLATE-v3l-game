@@ -92,6 +92,7 @@ io.on("connection", async (socket) => {
   socket.use((__, next) => {
     if (!req.session.userid) {
       socket.emit("connection:unauthorized");
+      socket.disconnect();
     } else {
       next();
     }
