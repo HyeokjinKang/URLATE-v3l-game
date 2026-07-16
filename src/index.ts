@@ -133,7 +133,7 @@ app.get("/", (req, res) => {
 });
 
 app.post("/emit/achievement", async (req, res) => {
-  const sid = await client.get(`uid:${req.body.userid}`);
+  // secret 검증을 Redis 조회보다 먼저 수행하여 미인증 요청의 자원 소모를 막습니다.
   if (req.body.secret !== config.project.secretKey) {
     res.status(400).json({
       result: "failed",
@@ -142,6 +142,7 @@ app.post("/emit/achievement", async (req, res) => {
     });
     return;
   }
+  const sid = await client.get(`uid:${req.body.userid}`);
   if (!sid) {
     res.status(400).json({
       result: "failed",
