@@ -20,12 +20,12 @@ importers:
       redis:
         specifier: ^5.12.1
         version: 5.12.1
+      signale:
+        specifier: ^1.4.0
+        version: 1.4.0
       socket.io:
         specifier: ^4.8.3
         version: 4.8.3
-      tsc-watch:
-        specifier: ^7.2.0
-        version: 7.2.0(typescript@5.9.3)
     devDependencies:
       '@types/express':
         specifier: ^5.0.6
@@ -45,12 +45,12 @@ importers:
       prettier:
         specifier: ^3.8.3
         version: 3.8.3
-      signale:
-        specifier: ^1.4.0
-        version: 1.4.0
       supervisor:
         specifier: ^0.12.0
         version: 0.12.0
+      tsc-watch:
+        specifier: ^7.2.0
+        version: 7.2.0(typescript@5.9.3)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
