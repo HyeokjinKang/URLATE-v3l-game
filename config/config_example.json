@@ -1,5 +1,6 @@
 {
   "project": {
+    "mode": "production",
     "url": "https://example.com",
     "api": "https://api.example.com",
     "cdn": "https://cdn.example.com",
@@ -15,6 +16,7 @@
   "session": {
     "secret": "SESSION SECRET",
     "resave": false,
-    "saveUninitialized": false
+    "saveUninitialized": false,
+    "domain": "example.com"
   }
 }
