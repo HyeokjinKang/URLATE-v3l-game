@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
-    "target": "es2025",
-    "module": "commonjs" /* Specify what module code is generated. */,
+    "target": "es2023",
+    "module": "node20" /* Specify what module code is generated. */,
     "rootDir": "src",
     "outDir": "dist",
 
