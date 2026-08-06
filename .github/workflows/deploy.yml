@@ -32,9 +32,17 @@ jobs:
       - name: Build project
         run: pnpm run build
 
+      - name: Prune dev dependencies
+        run: pnpm prune --prod
+
       - name: Deploy
         run: |
           rsync -azq --delete \
             --exclude=/.git/ \
             --exclude='config/config.json' \
             $GITHUB_WORKSPACE URLATE-PRODUCTION:${{secrets.DEPLOY_TARGET}}
+
+      - name: Restart
+        run: |
+          ssh URLATE-PRODUCTION \
+            "cd '${{secrets.DEPLOY_TARGET}}' && pm2 startOrReload ecosystem.config.js --update-env"

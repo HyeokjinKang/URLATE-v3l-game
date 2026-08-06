@@ -5,6 +5,7 @@ import { Signale } from "signale";
 import { createClient } from "redis";
 import { RedisStore } from "connect-redis";
 import session from "express-session";
+import { timingSafeEqual } from "crypto";
 
 const config = require(__dirname + "/../config/config.json");
 
@@ -54,12 +55,30 @@ const redisStore = new RedisStore({
   prefix: "urlate:",
 });
 
+// production 이외의 모드에서만 secure 쿠키를 해제합니다(로컬 HTTP 개발용).
+const isProduction = config.project.mode !== "test";
+
+// 리버스 프록시(HTTPS 종단) 뒤에서 X-Forwarded-Proto를 신뢰하여
+// secure 쿠키가 정상 동작하도록 합니다.
+app.set("trust proxy", 1);
+
+// 백엔드와 같은 세션 저장소를 공유하므로 쿠키 옵션도 같아야 합니다.
+// 옵션을 비워 두면 express-session의 기본값이 적용되어, 같은 세션 ID가
+// secure 플래그 없이 이 호스트 전용 쿠키로 다시 내려갈 수 있습니다.
+// 그러면 평문 HTTP로도 전송되고 백엔드가 심은 쿠키를 가릴 수 있습니다.
 const sessionMiddleware = session({
   store: redisStore,
-  resave: config.session.resave,
-  saveUninitialized: config.session.saveUninitialized,
+  resave: config.session.resave ?? false,
+  saveUninitialized: config.session.saveUninitialized ?? false,
   secret: config.session.secret,
   name: "urlate",
+  cookie: {
+    domain: config.session.domain,
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: "lax",
+    maxAge: 1000 * 60 * 60 * 24 * 14, // 14일. 백엔드와 동일하게 맞춥니다.
+  },
 });
 
 io.engine.use(sessionMiddleware);
@@ -132,9 +151,22 @@ app.get("/", (req, res) => {
   res.send("Hello from game server!");
 });
 
+/**
+ * project secret을 상수 시간에 비교합니다.
+ * 일반 문자열 비교는 첫 불일치 바이트에서 끝나므로, 비교에 걸린 시간이
+ * "앞에서 몇 글자가 맞았는지"를 흘립니다.
+ */
+const isValidSecret = (value: unknown): boolean => {
+  if (typeof value !== "string") return false;
+  const expected = Buffer.from(config.project.secretKey, "utf8");
+  const actual = Buffer.from(value, "utf8");
+  if (expected.length !== actual.length) return false;
+  return timingSafeEqual(expected, actual);
+};
+
 app.post("/emit/achievement", async (req, res) => {
   // secret 검증을 Redis 조회보다 먼저 수행하여 미인증 요청의 자원 소모를 막습니다.
-  if (req.body.secret !== config.project.secretKey) {
+  if (!isValidSecret(req.body.secret)) {
     res.status(400).json({
       result: "failed",
       error: "Authorize failed",
