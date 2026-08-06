@@ -32,15 +32,16 @@ jobs:
       - name: Build project
         run: pnpm run build
 
-      - name: Prune dev dependencies
-        run: pnpm prune --prod
+      - name: Prepare deployment artifact
+        run: |
+          pnpm --filter=urlate-v3l-game deploy ./deploy --legacy
+          cp -r dist ./deploy/
 
       - name: Deploy
         run: |
           rsync -azq --delete \
             --exclude=/.git/ \
-            --exclude='config/config.json' \
-            $GITHUB_WORKSPACE URLATE-PRODUCTION:${{secrets.DEPLOY_TARGET}}
+            $GITHUB_WORKSPACE/deploy/ URLATE-PRODUCTION:${{secrets.DEPLOY_TARGET}}/
 
       - name: Restart
         run: |
