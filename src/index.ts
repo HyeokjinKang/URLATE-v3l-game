@@ -119,6 +119,16 @@ io.use((socket, next) => {
   next();
 });
 
+/**
+ * 접속 상태 키(uid:*, sid:*)의 만료 시간입니다.
+ *
+ * 정리는 disconnect 핸들러가 담당하지만, 프로세스가 비정상 종료하면 그 핸들러가
+ * 돌지 않아 유령 접속 정보가 영구히 남습니다. 살아 있는 소켓은 아래 주기로
+ * 연장하므로 실제 접속에는 영향이 없습니다.
+ */
+const PRESENCE_TTL_SEC = 60 * 60;
+const PRESENCE_REFRESH_MS = (PRESENCE_TTL_SEC / 4) * 1000;
+
 io.on("connection", async (socket) => {
   const req = socket.request;
 
@@ -145,8 +155,8 @@ io.on("connection", async (socket) => {
       await client.del(`uid:${userid}`);
       await client.del(`sid:${prevSid}`);
     }
-    await client.set(`uid:${userid}`, `${socket.id}`);
-    await client.set(`sid:${socket.id}`, `${userid}`);
+    await client.set(`uid:${userid}`, `${socket.id}`, { EX: PRESENCE_TTL_SEC });
+    await client.set(`sid:${socket.id}`, `${userid}`, { EX: PRESENCE_TTL_SEC });
   } catch (err) {
     signale.error(err);
     socket.disconnect();
@@ -156,11 +166,20 @@ io.on("connection", async (socket) => {
   signale.connect(`User ${userid} connected with id ${socket.id}.`);
   io.emit("user:online", userid);
 
+  // 접속이 유지되는 동안 만료되지 않도록 연장합니다.
+  const refresh = setInterval(() => {
+    Promise.all([
+      client.expire(`uid:${userid}`, PRESENCE_TTL_SEC),
+      client.expire(`sid:${socket.id}`, PRESENCE_TTL_SEC),
+    ]).catch((err) => signale.error(err));
+  }, PRESENCE_REFRESH_MS);
+
   socket.on("ping", async () => {
     socket.emit("pong");
   });
 
   socket.on("disconnect", async () => {
+    clearInterval(refresh);
     try {
       const prevUid = await client.get(`sid:${socket.id}`);
       if (prevUid) {
