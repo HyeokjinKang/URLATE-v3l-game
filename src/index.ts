@@ -48,6 +48,10 @@ const client = createClient({
   },
   username: config.redis.username,
   password: config.redis.password,
+  // 필수: 기본값(오프라인 큐)에서는 연결이 끊겨도 명령이 예외를 던지지 않고
+  // 복구될 때까지 대기합니다. 세션 저장소가 이 커넥션을 쓰므로, Redis가 죽으면
+  // 쿠키를 가진 모든 요청과 소켓 핸드셰이크가 응답 없이 매달립니다.
+  disableOfflineQueue: true,
 });
 
 const redisStore = new RedisStore({
@@ -130,18 +134,26 @@ io.on("connection", async (socket) => {
   });
 
   const userid = req.session.userid;
-  const prevSid = await client.get(`uid:${userid}`);
 
-  if (prevSid) {
-    signale.conflict(`User ${userid} is already connected, disconnecting...`);
-    io.to(prevSid).emit("connection:conflict");
-    await client.del(`uid:${userid}`);
-    await client.del(`sid:${prevSid}`);
+  // 소켓 핸들러의 거부된 프로미스는 받아 줄 곳이 없어 unhandledRejection이
+  // 됩니다. Redis 장애가 소켓 하나의 실패로 끝나도록 여기서 흡수합니다.
+  try {
+    const prevSid = await client.get(`uid:${userid}`);
+    if (prevSid) {
+      signale.conflict(`User ${userid} is already connected, disconnecting...`);
+      io.to(prevSid).emit("connection:conflict");
+      await client.del(`uid:${userid}`);
+      await client.del(`sid:${prevSid}`);
+    }
+    await client.set(`uid:${userid}`, `${socket.id}`);
+    await client.set(`sid:${socket.id}`, `${userid}`);
+  } catch (err) {
+    signale.error(err);
+    socket.disconnect();
+    return;
   }
 
   signale.connect(`User ${userid} connected with id ${socket.id}.`);
-  await client.set(`uid:${userid}`, `${socket.id}`);
-  await client.set(`sid:${socket.id}`, `${userid}`);
   io.emit("user:online", userid);
 
   socket.on("ping", async () => {
@@ -149,11 +161,15 @@ io.on("connection", async (socket) => {
   });
 
   socket.on("disconnect", async () => {
-    const prevUid = await client.get(`sid:${socket.id}`);
-    if (prevUid) {
-      await client.del(`uid:${userid}`);
-      await client.del(`sid:${socket.id}`);
-      io.emit("user:offline", userid);
+    try {
+      const prevUid = await client.get(`sid:${socket.id}`);
+      if (prevUid) {
+        await client.del(`uid:${userid}`);
+        await client.del(`sid:${socket.id}`);
+        io.emit("user:offline", userid);
+      }
+    } catch (err) {
+      signale.error(err);
     }
     signale.disconnect(`User ${userid} disconnected with id ${socket.id}.`);
   });
