@@ -87,8 +87,19 @@ const sessionMiddleware = session({
 
 io.engine.use(sessionMiddleware);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.disable("x-powered-by");
+
+app.use(express.json({ limit: "64kb" }));
+app.use(express.urlencoded({ extended: true, limit: "64kb" }));
+
+// Express 5는 본문 파서가 처리하지 못한 요청의 req.body를 undefined로 둡니다
+// (Express 4는 {}). 라우트가 req.body.x를 곧바로 읽으므로 Content-Type 하나만
+// 어긋나도 400이어야 할 응답이 TypeError로 500이 됩니다.
+app.use((req, __, next) => {
+  if (req.body === undefined) req.body = {};
+  next();
+});
+
 app.use(sessionMiddleware);
 
 client.on("connect", () => {
@@ -233,6 +244,42 @@ app.post("/emit/achievement", async (req, res) => {
   io.to(sid).emit(`achievement`, JSON.stringify(req.body.achievement));
   res.status(200).json({ result: "sent" });
 });
+
+app.use((__, res) => {
+  res.status(404).json({
+    result: "failed",
+    error: "Not Found",
+    description: "Unknown endpoint.",
+  });
+});
+
+// 이 핸들러가 없으면 Express 기본 핸들러가 응답 본문에 스택 트레이스를 실어
+// 보냅니다(절대 경로와 의존성 버전이 그대로 노출됩니다).
+// Express는 인자 4개인 미들웨어를 에러 핸들러로 인식하므로 next를 유지해야 합니다.
+app.use(
+  (
+    err: unknown,
+    __: express.Request,
+    res: express.Response,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    next: express.NextFunction,
+  ) => {
+    signale.error(err);
+    if (res.headersSent) return;
+    // 본문 파서가 붙이는 4xx(깨진 JSON 400, 크기 초과 413)는 그대로 씁니다.
+    const status = (err as { status?: number; statusCode?: number } | null)
+      ?.status;
+    const isClientError =
+      typeof status === "number" && status >= 400 && status < 500;
+    res.status(isClientError ? status : 500).json({
+      result: "failed",
+      error: isClientError ? "Bad Request" : "Internal Server Error",
+      description: isClientError
+        ? "Request could not be processed."
+        : "An unexpected error occurred.",
+    });
+  },
+);
 
 httpServer.listen(config.project.port, () => {
   signale.success(`Game server running at port ${config.project.port}.`);
