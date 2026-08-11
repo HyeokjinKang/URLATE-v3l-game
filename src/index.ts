@@ -95,26 +95,38 @@ client.on("error", (err) => {
   signale.error(err);
 });
 
+/**
+ * 인증은 핸드셰이크 단계에서 끝냅니다.
+ *
+ * socket.use()는 연결이 성립한 뒤 들어오는 이벤트에만 걸리는 미들웨어라,
+ * connection 핸들러 본문은 그 검사보다 먼저 실행됩니다. 여기에 인증을 두면
+ * 미인증 소켓이 접속 정보를 Redis에 남기고 user:online 브로드캐스트까지
+ * 수신합니다.
+ */
+io.use((socket, next) => {
+  const req = socket.request;
+  if (!req.session?.userid) {
+    const err = new Error("unauthorized") as Error & { data?: unknown };
+    // 클라이언트가 재연결 대상이 아님을 구분할 수 있도록 코드를 실어 보냅니다.
+    err.data = { code: "unauthorized" };
+    next(err);
+    return;
+  }
+  next();
+});
+
 io.on("connection", async (socket) => {
   const req = socket.request;
 
+  // 연결 중 로그아웃·세션 만료를 반영하기 위해 이벤트마다 세션을 다시 읽습니다.
   socket.use((__, next) => {
     req.session.reload((err: any) => {
-      if (err) {
+      if (err || !req.session.userid) {
         socket.disconnect();
       } else {
         next();
       }
     });
-  });
-
-  socket.use((__, next) => {
-    if (!req.session.userid) {
-      socket.emit("connection:unauthorized");
-      socket.disconnect();
-    } else {
-      next();
-    }
   });
 
   const userid = req.session.userid;
