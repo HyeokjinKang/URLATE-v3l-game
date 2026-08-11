@@ -156,6 +156,41 @@ io.on("connection", async (socket) => {
 
   const userid = req.session.userid;
 
+  let refresh: NodeJS.Timeout | undefined;
+  let announced = false;
+
+  // 등록한 접속 정보와 타이머를 되돌립니다.
+  const releasePresence = async () => {
+    if (refresh) {
+      clearInterval(refresh);
+      refresh = undefined;
+    }
+    try {
+      // 다른 소켓이 자리를 넘겨받았다면 그 등록까지 지우면 안 됩니다.
+      if ((await client.get(`uid:${userid}`)) === socket.id) {
+        await client.del(`uid:${userid}`);
+      }
+      if (await client.get(`sid:${socket.id}`)) {
+        await client.del(`sid:${socket.id}`);
+        if (announced) io.emit("user:offline", userid);
+      }
+    } catch (err) {
+      signale.error(err);
+    }
+  };
+
+  // 아래 await보다 먼저 등록해야 합니다. Redis 왕복 도중에 연결이 끊기면
+  // disconnect는 그 사이에 지나가 버려, 나중에 등록한 핸들러는 영영 불리지
+  // 않습니다. 그러면 타이머가 남아 죽은 소켓의 TTL을 영원히 연장합니다.
+  socket.on("disconnect", async () => {
+    await releasePresence();
+    signale.disconnect(`User ${userid} disconnected with id ${socket.id}.`);
+  });
+
+  socket.on("ping", async () => {
+    socket.emit("pong");
+  });
+
   // 소켓 핸들러의 거부된 프로미스는 받아 줄 곳이 없어 unhandledRejection이
   // 됩니다. Redis 장애가 소켓 하나의 실패로 끝나도록 여기서 흡수합니다.
   try {
@@ -174,35 +209,32 @@ io.on("connection", async (socket) => {
     return;
   }
 
+  // 위 왕복 도중에 끊겼다면 disconnect 핸들러는 이미 지나갔습니다. 방금 쓴
+  // 접속 정보를 여기서 되돌리고 끝냅니다.
+  if (!socket.connected) {
+    await releasePresence();
+    return;
+  }
+
   signale.connect(`User ${userid} connected with id ${socket.id}.`);
   io.emit("user:online", userid);
+  announced = true;
 
   // 접속이 유지되는 동안 만료되지 않도록 연장합니다.
-  const refresh = setInterval(() => {
+  // 끊긴 소켓을 스스로 확인해 멈춥니다. 위 disconnect 핸들러가 정리를
+  // 맡지만, 여기까지 오는 사이에 await가 하나라도 끼면 그 핸들러는 이미
+  // 지나간 뒤일 수 있습니다. 타이머가 스스로 조건을 확인하게 두면 그런
+  // 변경이 생겨도 누수로 이어지지 않습니다.
+  refresh = setInterval(() => {
+    if (!socket.connected) {
+      void releasePresence();
+      return;
+    }
     Promise.all([
       client.expire(`uid:${userid}`, PRESENCE_TTL_SEC),
       client.expire(`sid:${socket.id}`, PRESENCE_TTL_SEC),
     ]).catch((err) => signale.error(err));
   }, PRESENCE_REFRESH_MS);
-
-  socket.on("ping", async () => {
-    socket.emit("pong");
-  });
-
-  socket.on("disconnect", async () => {
-    clearInterval(refresh);
-    try {
-      const prevUid = await client.get(`sid:${socket.id}`);
-      if (prevUid) {
-        await client.del(`uid:${userid}`);
-        await client.del(`sid:${socket.id}`);
-        io.emit("user:offline", userid);
-      }
-    } catch (err) {
-      signale.error(err);
-    }
-    signale.disconnect(`User ${userid} disconnected with id ${socket.id}.`);
-  });
 });
 
 app.get("/", (req, res) => {
