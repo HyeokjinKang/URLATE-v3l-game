@@ -281,7 +281,99 @@ app.use(
   },
 );
 
-httpServer.listen(config.project.port, () => {
-  signale.success(`Game server running at port ${config.project.port}.`);
-  client.connect();
+// Node 15+는 처리되지 않은 프로미스 거부에서 프로세스를 종료합니다.
+process.on("unhandledRejection", (reason) => {
+  signale.error("Unhandled promise rejection:");
+  signale.error(reason);
+});
+
+// uncaughtException 이후의 상태는 신뢰할 수 없어 pm2 재시작에 맡깁니다.
+process.on("uncaughtException", (err) => {
+  signale.fatal("Uncaught exception, shutting down:");
+  signale.fatal(err);
+  process.exit(1);
+});
+
+// node-redis는 무한히 재시도하므로 그대로 await하면 Redis가 죽어 있는 동안
+// 포트가 아예 열리지 않습니다.
+const REDIS_CONNECT_TIMEOUT_MS = 5000;
+
+// 종료가 끝나지 않으면 강제 종료합니다. pm2의 kill_timeout보다 짧아야 합니다.
+const SHUTDOWN_TIMEOUT_MS = 10000;
+
+const closeRedis = async () => {
+  try {
+    // 재연결 중인 클라이언트는 isOpen이 true여도 quit()이 정착하지 않으므로
+    // isReady일 때만 시도합니다.
+    if (client.isReady) {
+      await Promise.race([
+        client.quit(),
+        // unref()를 쓰면 안 됩니다. 남은 핸들이 모두 unref면 타이머가 발화하기
+        // 전에 프로세스가 빠져나가 종료 절차가 중간에 끊깁니다.
+        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      ]);
+    }
+  } catch (err) {
+    signale.error(err);
+  }
+  try {
+    if (client.isOpen) client.destroy();
+  } catch {
+    // 이미 닫혀 있습니다.
+  }
+};
+
+const start = async () => {
+  // 포트를 열기 전에 연결합니다. listen 콜백 안에서 연결하면 Redis가 준비되기
+  // 전에 요청을 받게 되고, catch가 없어 실패가 unhandledRejection이 됐습니다.
+  const connecting = client.connect().catch((err) => {
+    signale.error("Failed to connect to redis on startup.");
+    signale.error(err);
+  });
+  await Promise.race([
+    connecting,
+    new Promise<void>((resolve) =>
+      setTimeout(resolve, REDIS_CONNECT_TIMEOUT_MS).unref(),
+    ),
+  ]);
+  if (!client.isReady) {
+    signale.warn("Starting without redis. Sockets fail until it recovers.");
+  }
+
+  httpServer.listen(config.project.port, () => {
+    signale.success(`Game server running at port ${config.project.port}.`);
+  });
+
+  // 배포·재시작 시 연결을 정리하고 나갑니다.
+  let shuttingDown = false;
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    signale.pending(`Received ${signal}, shutting down...`);
+
+    await new Promise<void>((resolve) => io.close(() => resolve()));
+    await closeRedis();
+
+    signale.success("Shutdown complete.");
+    process.exit(0);
+  };
+
+  for (const signal of ["SIGTERM", "SIGINT"]) {
+    process.on(signal, () => {
+      setTimeout(() => {
+        signale.error("Shutdown timed out, forcing exit.");
+        process.exit(1);
+      }, SHUTDOWN_TIMEOUT_MS).unref();
+      shutdown(signal).catch((err) => {
+        signale.error(err);
+        process.exit(1);
+      });
+    });
+  }
+};
+
+start().catch((err) => {
+  signale.fatal("Failed to start the server.");
+  signale.fatal(err);
+  process.exit(1);
 });
