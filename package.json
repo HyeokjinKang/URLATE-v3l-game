@@ -16,6 +16,7 @@
   },
   "author": "Coupy",
   "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@11.21.0",
   "bugs": {
     "url": "https://github.com/HyeokjinKang/URLATE-v3l-game/issues"
   },
