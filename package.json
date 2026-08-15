@@ -1,4 +1,8 @@
 {
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HyeokjinKang/URLATE-v3l-game.git"
+  },
   "name": "urlate-v3l-game",
   "version": "1.0.0",
   "description": "Socket.IO based game server for URLATE",
@@ -9,10 +13,6 @@
     "dev": "supervisor dist/index.js",
     "start": "pm2 start ecosystem.config.js",
     "stop": "pm2 stop URLATE-v3l-game"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/HyeokjinKang/URLATE-v3l-game.git"
   },
   "author": "Coupy",
   "license": "AGPL-3.0-or-later",
