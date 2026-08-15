@@ -372,8 +372,11 @@ const start = async () => {
     signale.warn("Starting without redis. Sockets fail until it recovers.");
   }
 
-  httpServer.listen(config.project.port, () => {
-    signale.success(`Game server running at port ${config.project.port}.`);
+  // 리버스 프록시가 앞에 있으므로 기본값은 루프백입니다. 와일드카드로 열면
+  // 포트가 방화벽 정책과 무관하게 외부에 그대로 노출됩니다.
+  const host = config.project.host ?? "127.0.0.1";
+  httpServer.listen(config.project.port, host, () => {
+    signale.success(`Game server running at ${host}:${config.project.port}.`);
   });
 
   // 배포·재시작 시 연결을 정리하고 나갑니다.
