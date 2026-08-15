@@ -3,11 +3,16 @@
     "type": "git",
     "url": "git+https://github.com/HyeokjinKang/URLATE-v3l-game.git"
   },
+  "engines": {
+    "node": "24",
+    "pnpm": "11"
+  },
   "name": "urlate-v3l-game",
   "version": "1.0.0",
   "description": "Socket.IO based game server for URLATE",
   "main": "src/",
   "scripts": {
+    "preinstall": "npx only-allow pnpm",
     "build": "tsc",
     "auto-build": "tsc-watch",
     "dev": "supervisor dist/index.js",
