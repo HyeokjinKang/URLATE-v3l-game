@@ -7,6 +7,8 @@ import { RedisStore } from "connect-redis";
 import session from "express-session";
 import { timingSafeEqual } from "crypto";
 
+// config.json은 배포마다 내용이 달라 정적 import 대상이 아닙니다.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const config = require(__dirname + "/../config/config.json");
 
 const app = express();
@@ -145,7 +147,7 @@ io.on("connection", async (socket) => {
 
   // 연결 중 로그아웃·세션 만료를 반영하기 위해 이벤트마다 세션을 다시 읽습니다.
   socket.use((__, next) => {
-    req.session.reload((err: any) => {
+    req.session.reload((err: unknown) => {
       if (err || !req.session.userid) {
         socket.disconnect();
       } else {
