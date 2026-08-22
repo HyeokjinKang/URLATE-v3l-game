@@ -1,0 +1,7 @@
+# Build artifacts and lockfiles are not formatting targets.
+dist/
+pnpm-lock.yaml
+
+# Keep vendored files exactly as received.
+*.min.js
+*.min.css
