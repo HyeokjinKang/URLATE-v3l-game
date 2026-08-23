@@ -7,7 +7,6 @@ import { RedisStore } from "connect-redis";
 import session from "express-session";
 import { timingSafeEqual } from "crypto";
 
-// config.json differs per deployment, so it isn't a static import target.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const config = require(__dirname + "/../config/config.json");
 
@@ -60,10 +59,8 @@ const redisStore = new RedisStore({
   prefix: "urlate:",
 });
 
-// secure cookies are disabled only outside production mode (for local HTTP development).
 const isProduction = config.project.mode !== "test";
 
-// Trusts X-Forwarded-Proto from the HTTPS-terminating proxy so secure cookies work.
 app.set("trust proxy", 1);
 
 // Must match the backend's cookie options: they share a session store, and
@@ -115,7 +112,6 @@ io.use((socket, next) => {
   const req = socket.request;
   if (!req.session?.userid) {
     const err = new Error("unauthorized") as Error & { data?: unknown };
-    // Carries a code so the client can tell this isn't worth reconnecting for.
     err.data = { code: "unauthorized" };
     next(err);
     return;
@@ -132,7 +128,6 @@ const PRESENCE_REFRESH_MS = (PRESENCE_TTL_SEC / 4) * 1000;
 io.on("connection", async (socket) => {
   const req = socket.request;
 
-  // Reloaded per event to catch a logout or expiry mid-connection.
   socket.use((__, next) => {
     req.session.reload((err: unknown) => {
       if (err || !req.session.userid) {
@@ -148,7 +143,6 @@ io.on("connection", async (socket) => {
   let refresh: NodeJS.Timeout | undefined;
   let announced = false;
 
-  // Reverts the presence entries and timer this connection registered.
   const releasePresence = async () => {
     if (refresh) {
       clearInterval(refresh);
@@ -180,8 +174,6 @@ io.on("connection", async (socket) => {
     socket.emit("pong");
   });
 
-  // A rejection here has no caller and becomes an unhandledRejection; absorbed
-  // so a Redis failure only takes down this socket.
   try {
     const prevSid = await client.get(`uid:${userid}`);
     if (prevSid) {
@@ -228,8 +220,6 @@ app.get("/", (req, res) => {
   res.send("Hello from game server!");
 });
 
-// Constant-time comparison: a plain one short-circuits at the first mismatched
-// byte, leaking how many leading characters matched through timing.
 const isValidSecret = (value: unknown): boolean => {
   if (typeof value !== "string") return false;
   const expected = Buffer.from(config.project.secretKey, "utf8");
@@ -239,7 +229,6 @@ const isValidSecret = (value: unknown): boolean => {
 };
 
 app.post("/emit/achievement", async (req, res) => {
-  // Checked before the Redis lookup so an unauthenticated request costs nothing.
   if (!isValidSecret(req.body.secret)) {
     res.status(400).json({
       result: "failed",
@@ -282,7 +271,6 @@ app.use(
   ) => {
     signale.error(err);
     if (res.headersSent) return;
-    // Preserves the 4xx that the body parser attaches (malformed JSON 400, oversized body 413).
     const status = (err as { status?: number; statusCode?: number } | null)
       ?.status;
     const isClientError =
@@ -297,13 +285,11 @@ app.use(
   },
 );
 
-// Node 15+ terminates the process on an unhandled promise rejection.
 process.on("unhandledRejection", (reason) => {
   signale.error("Unhandled promise rejection:");
   signale.error(reason);
 });
 
-// State after uncaughtException can't be trusted, so let pm2 restart the process.
 process.on("uncaughtException", (err) => {
   signale.fatal("Uncaught exception, shutting down:");
   signale.fatal(err);
@@ -340,8 +326,6 @@ const closeRedis = async () => {
 };
 
 const start = async () => {
-  // Connects before opening the port; doing it in the listen callback would
-  // accept requests before Redis is ready.
   const connecting = client.connect().catch((err) => {
     signale.error("Failed to connect to redis on startup.");
     signale.error(err);
@@ -363,7 +347,6 @@ const start = async () => {
     signale.success(`Game server running at ${host}:${config.project.port}.`);
   });
 
-  // Cleans up connections and exits on deploy/restart.
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
