@@ -50,10 +50,8 @@ const client = createClient({
   },
   username: config.redis.username,
   password: config.redis.password,
-  // Required: with the default (offline queue), a dropped connection makes
-  // commands wait for recovery instead of throwing. The session store uses
-  // this same connection, so if Redis goes down, every cookie-bearing
-  // request and socket handshake would hang with no response.
+  // Without this, commands queue instead of throwing while disconnected, and
+  // every cookie-bearing request and socket handshake hangs until Redis returns.
   disableOfflineQueue: true,
 });
 
@@ -65,15 +63,12 @@ const redisStore = new RedisStore({
 // secure cookies are disabled only outside production mode (for local HTTP development).
 const isProduction = config.project.mode !== "test";
 
-// Trusts X-Forwarded-Proto from the reverse proxy (which terminates HTTPS),
-// so secure cookies work correctly.
+// Trusts X-Forwarded-Proto from the HTTPS-terminating proxy so secure cookies work.
 app.set("trust proxy", 1);
 
-// Shares the same session store as the backend, so the cookie options must
-// match. Leaving them unset would fall back to express-session's defaults,
-// which could re-issue the same session ID as a host-only cookie without
-// the secure flag -- sent over plain HTTP, and potentially masking the
-// cookie the backend set.
+// Must match the backend's cookie options: they share a session store, and
+// express-session's defaults would re-issue the session ID as an insecure
+// host-only cookie that masks the backend's.
 const sessionMiddleware = session({
   store: redisStore,
   resave: config.session.resave ?? false,
@@ -96,9 +91,8 @@ app.disable("x-powered-by");
 app.use(express.json({ limit: "64kb" }));
 app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 
-// Express 5 leaves req.body undefined when the body parser can't handle a
-// request (Express 4 used {}). Routes read req.body.x directly, so a single
-// mismatched Content-Type would turn what should be a 400 into a TypeError-driven 500.
+// Express 5 leaves req.body undefined when the parser can't handle a request
+// (Express 4 used {}), turning what should be a 400 into a TypeError 500.
 app.use((req, __, next) => {
   if (req.body === undefined) req.body = {};
   next();
@@ -114,14 +108,9 @@ client.on("error", (err) => {
   signale.error(err);
 });
 
-/**
- * Authentication is finished at the handshake stage.
- *
- * socket.use() only middlewares events arriving after a connection is
- * already established, so the connection handler body would run before
- * that check. Putting auth there would let an unauthenticated socket write
- * presence info to Redis and even receive the user:online broadcast.
- */
+// Authenticates at the handshake. socket.use() only covers events after the
+// connection is established, so auth there would let an unauthenticated socket
+// write presence to Redis and receive the user:online broadcast first.
 io.use((socket, next) => {
   const req = socket.request;
   if (!req.session?.userid) {
@@ -134,22 +123,16 @@ io.use((socket, next) => {
   next();
 });
 
-/**
- * Expiry for the presence keys (uid:*, sid:*).
- *
- * Cleanup is normally the disconnect handler's job, but if the process dies
- * abnormally that handler never runs, leaving stale presence info behind
- * permanently. Live sockets renew this on the interval below, so it doesn't
- * affect an actual connection.
- */
+// Expiry for the presence keys (uid:*, sid:*). The disconnect handler normally
+// clears them, but an abnormal exit would leave them behind forever. Live
+// sockets renew on the interval below.
 const PRESENCE_TTL_SEC = 60 * 60;
 const PRESENCE_REFRESH_MS = (PRESENCE_TTL_SEC / 4) * 1000;
 
 io.on("connection", async (socket) => {
   const req = socket.request;
 
-  // Reloads the session on every event to reflect a logout or expiry that
-  // happened mid-connection.
+  // Reloaded per event to catch a logout or expiry mid-connection.
   socket.use((__, next) => {
     req.session.reload((err: unknown) => {
       if (err || !req.session.userid) {
@@ -185,10 +168,9 @@ io.on("connection", async (socket) => {
     }
   };
 
-  // Must be registered before the await below. If the connection drops during
-  // a Redis round trip, disconnect would fire in that window, and a handler
-  // registered afterward would never get called -- leaving the timer behind
-  // to keep renewing a dead socket's TTL forever.
+  // Registered before the await below: a drop during the Redis round trip fires
+  // disconnect in that window, and a later handler would never run, leaving the
+  // timer renewing a dead socket's TTL forever.
   socket.on("disconnect", async () => {
     await releasePresence();
     signale.disconnect(`User ${userid} disconnected with id ${socket.id}.`);
@@ -198,9 +180,8 @@ io.on("connection", async (socket) => {
     socket.emit("pong");
   });
 
-  // A rejected promise in a socket handler has no caller to catch it and
-  // becomes an unhandledRejection. Absorbed here so a Redis failure only
-  // takes down this one socket.
+  // A rejection here has no caller and becomes an unhandledRejection; absorbed
+  // so a Redis failure only takes down this socket.
   try {
     const prevSid = await client.get(`uid:${userid}`);
     if (prevSid) {
@@ -217,9 +198,8 @@ io.on("connection", async (socket) => {
     return;
   }
 
-  // If the connection dropped during the round trip above, the disconnect
-  // handler has already run and passed. Revert the presence entries just
-  // written and stop here.
+  // Dropped during the round trip above means disconnect already ran; revert
+  // what was just written.
   if (!socket.connected) {
     await releasePresence();
     return;
@@ -229,11 +209,9 @@ io.on("connection", async (socket) => {
   io.emit("user:online", userid);
   announced = true;
 
-  // Renews the TTL so it doesn't expire while the connection is alive.
-  // Checks the socket itself and stops if it's dead. The disconnect handler
-  // above normally handles cleanup, but any await between here and there
-  // could let it run first. Having the timer verify its own condition means
-  // that ordering doesn't turn into a leak.
+  // Renews the TTL while the connection is alive. Checks the socket itself
+  // rather than trusting the disconnect handler above, which any await between
+  // here and there could let run first.
   refresh = setInterval(() => {
     if (!socket.connected) {
       void releasePresence();
@@ -250,11 +228,8 @@ app.get("/", (req, res) => {
   res.send("Hello from game server!");
 });
 
-/**
- * Compares the project secret in constant time.
- * A plain string comparison short-circuits at the first mismatched byte,
- * leaking how many leading characters matched through timing.
- */
+// Constant-time comparison: a plain one short-circuits at the first mismatched
+// byte, leaking how many leading characters matched through timing.
 const isValidSecret = (value: unknown): boolean => {
   if (typeof value !== "string") return false;
   const expected = Buffer.from(config.project.secretKey, "utf8");
@@ -264,8 +239,7 @@ const isValidSecret = (value: unknown): boolean => {
 };
 
 app.post("/emit/achievement", async (req, res) => {
-  // Validates the secret before the Redis lookup, so an unauthenticated
-  // request doesn't spend resources.
+  // Checked before the Redis lookup so an unauthenticated request costs nothing.
   if (!isValidSecret(req.body.secret)) {
     res.status(400).json({
       result: "failed",
@@ -295,9 +269,9 @@ app.use((__, res) => {
   });
 });
 
-// Without this handler, Express's default handler would put a stack trace in
-// the response body (exposing absolute paths and dependency versions as-is).
-// Express identifies an error handler by its 4-argument signature, so next must stay.
+// Without this, Express's default handler puts a stack trace in the response
+// body. Express identifies an error handler by its 4-argument signature, so
+// next must stay.
 app.use(
   (
     err: unknown,
@@ -366,9 +340,8 @@ const closeRedis = async () => {
 };
 
 const start = async () => {
-  // Connects before opening the port. Connecting inside the listen callback
-  // would accept requests before Redis is ready, and an uncaught failure
-  // there would only surface as an unhandledRejection.
+  // Connects before opening the port; doing it in the listen callback would
+  // accept requests before Redis is ready.
   const connecting = client.connect().catch((err) => {
     signale.error("Failed to connect to redis on startup.");
     signale.error(err);
@@ -383,9 +356,8 @@ const start = async () => {
     signale.warn("Starting without redis. Sockets fail until it recovers.");
   }
 
-  // Defaults to loopback since a reverse proxy sits in front. Binding to a
-  // wildcard address would expose the port directly, regardless of firewall
-  // policy.
+  // Loopback by default since a reverse proxy sits in front; a wildcard bind
+  // would expose the port directly regardless of firewall policy.
   const host = config.project.host ?? "127.0.0.1";
   httpServer.listen(config.project.port, host, () => {
     signale.success(`Game server running at ${host}:${config.project.port}.`);
