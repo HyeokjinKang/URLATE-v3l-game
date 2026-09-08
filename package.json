@@ -11,6 +11,10 @@
   "version": "1.0.0-rc.5",
   "description": "Socket.IO based game server for URLATE",
   "main": "src/",
+  "files": [
+    "dist",
+    "ecosystem.config.js"
+  ],
   "scripts": {
     "preinstall": "npx only-allow pnpm",
     "build": "tsc",

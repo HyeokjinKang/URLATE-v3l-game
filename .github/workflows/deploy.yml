@@ -30,15 +30,13 @@ jobs:
 
       - name: Prepare deployment artifact
         run: |
-          pnpm --filter=urlate-v3l-game deploy ./deploy --legacy
-          cp -r dist ./deploy/
+          pnpm --filter=urlate-v3l-game deploy ./deploy --legacy --prod
 
       - name: Deploy
         run: |
           rsync -azq --delete \
-            --exclude=/.git/ \
             --exclude='config/config.json' \
-            $GITHUB_WORKSPACE/deploy/ URLATE-PRODUCTION:${{secrets.DEPLOY_TARGET}}/
+            "$GITHUB_WORKSPACE/deploy/" URLATE-PRODUCTION:"${{secrets.DEPLOY_TARGET}}/"
 
       - name: Restart
         run: |
