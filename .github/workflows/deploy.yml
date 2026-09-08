@@ -30,7 +30,7 @@ jobs:
 
       - name: Prepare deployment artifact
         run: |
-          pnpm --filter=urlate-v3l-game deploy ./deploy --legacy --prod
+          pnpm --filter=urlate-v3l-game deploy --prod ./deploy
 
       - name: Deploy
         run: |
