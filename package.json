@@ -5,10 +5,10 @@
   },
   "engines": {
     "node": "24",
-    "pnpm": "11"
+    "pnpm": "12"
   },
   "name": "urlate-v3l-game",
-  "version": "1.0.0",
+  "version": "1.0.0-rc.5",
   "description": "Socket.IO based game server for URLATE",
   "main": "src/",
   "scripts": {
@@ -22,9 +22,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
-  "author": "Coupy",
+  "author": "Coupyworks",
   "license": "AGPL-3.0-or-later",
-  "packageManager": "pnpm@11.21.0",
+  "packageManager": "pnpm@12.3.4",
   "bugs": {
     "url": "https://github.com/HyeokjinKang/URLATE-v3l-game/issues"
   },
