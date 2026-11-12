@@ -124,6 +124,8 @@ io.use((socket, next) => {
 // sockets renew on the interval below.
 const PRESENCE_TTL_SEC = 60 * 60;
 const PRESENCE_REFRESH_MS = (PRESENCE_TTL_SEC / 4) * 1000;
+const SESSION_CHECK_MS = 60 * 1000;
+const CONFLICT_GRACE_MS = 5 * 1000;
 
 io.on("connection", async (socket) => {
   const req = socket.request;
@@ -141,12 +143,17 @@ io.on("connection", async (socket) => {
   const userid = req.session.userid;
 
   let refresh: NodeJS.Timeout | undefined;
+  let sessionCheck: NodeJS.Timeout | undefined;
   let announced = false;
 
   const releasePresence = async () => {
     if (refresh) {
       clearInterval(refresh);
       refresh = undefined;
+    }
+    if (sessionCheck) {
+      clearInterval(sessionCheck);
+      sessionCheck = undefined;
     }
     try {
       // If another socket has already taken over this slot, don't clear its entry.
@@ -181,6 +188,9 @@ io.on("connection", async (socket) => {
       io.to(prevSid).emit("connection:conflict");
       await client.del(`uid:${userid}`);
       await client.del(`sid:${prevSid}`);
+      setTimeout(() => {
+        io.in(prevSid).disconnectSockets(true);
+      }, CONFLICT_GRACE_MS).unref();
     }
     await client.set(`uid:${userid}`, `${socket.id}`, { EX: PRESENCE_TTL_SEC });
     await client.set(`sid:${socket.id}`, `${userid}`, { EX: PRESENCE_TTL_SEC });
@@ -214,6 +224,18 @@ io.on("connection", async (socket) => {
       client.expire(`sid:${socket.id}`, PRESENCE_TTL_SEC),
     ]).catch((err) => signale.error(err));
   }, PRESENCE_REFRESH_MS);
+
+  sessionCheck = setInterval(() => {
+    if (!socket.connected) {
+      void releasePresence();
+      return;
+    }
+    redisStore.get(req.session.id, (err, stored) => {
+      if (err || stored?.userid === userid) return;
+      socket.emit("connection:unauthorized");
+      socket.disconnect(true);
+    });
+  }, SESSION_CHECK_MS);
 });
 
 app.get("/", (req, res) => {
