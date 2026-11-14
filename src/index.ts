@@ -107,7 +107,7 @@ client.on("error", (err) => {
 
 // Authenticates at the handshake. socket.use() only covers events after the
 // connection is established, so auth there would let an unauthenticated socket
-// write presence to Redis and receive the user:online broadcast first.
+// write presence to Redis first.
 io.use((socket, next) => {
   const req = socket.request;
   if (!req.session?.userid) {
@@ -141,7 +141,6 @@ io.on("connection", async (socket) => {
   const userid = req.session.userid;
 
   let refresh: NodeJS.Timeout | undefined;
-  let announced = false;
 
   const releasePresence = async () => {
     if (refresh) {
@@ -155,7 +154,6 @@ io.on("connection", async (socket) => {
       }
       if (await client.get(`sid:${socket.id}`)) {
         await client.del(`sid:${socket.id}`);
-        if (announced) io.emit("user:offline", userid);
       }
     } catch (err) {
       signale.error(err);
@@ -198,8 +196,6 @@ io.on("connection", async (socket) => {
   }
 
   signale.connect(`User ${userid} connected with id ${socket.id}.`);
-  io.emit("user:online", userid);
-  announced = true;
 
   // Renews the TTL while the connection is alive. Checks the socket itself
   // rather than trusting the disconnect handler above, which any await between
