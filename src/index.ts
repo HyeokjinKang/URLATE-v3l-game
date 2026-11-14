@@ -67,7 +67,7 @@ const redisStore = new RedisStore({
 
 const isProduction = config.project.mode !== "test";
 
-app.set("trust proxy", 1);
+app.set("trust proxy", config.project.trustProxy ?? 1);
 
 // Must match the backend's cookie options: they share a session store, and
 // express-session's defaults would re-issue the session ID as an insecure
@@ -92,7 +92,6 @@ io.engine.use(sessionMiddleware);
 app.disable("x-powered-by");
 
 app.use(express.json({ limit: "64kb" }));
-app.use(express.urlencoded({ extended: true, limit: "64kb" }));
 
 // Express 5 leaves req.body undefined when the parser can't handle a request
 // (Express 4 used {}), turning what should be a 400 into a TypeError 500.
@@ -181,10 +180,6 @@ io.on("connection", async (socket) => {
     signale.disconnect(`User ${userid} disconnected with id ${socket.id}.`);
   });
 
-  socket.on("ping", async () => {
-    socket.emit("pong");
-  });
-
   try {
     const prevSid = await client.get(`uid:${userid}`);
     if (prevSid) {
@@ -257,7 +252,7 @@ app.post("/emit/achievement", async (req, res) => {
     res.status(400).json({
       result: "failed",
       error: "Authorize failed",
-      description: "Project secret key is not vaild.",
+      description: "Project secret key is not valid.",
     });
     return;
   }
