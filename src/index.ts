@@ -12,7 +12,13 @@ const config = require(__dirname + "/../config/config.json");
 
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer);
+const allowedOrigin = new URL(config.project.url).origin;
+
+const io = new Server(httpServer, {
+  allowRequest: (req, callback) => {
+    callback(null, req.headers.origin === allowedOrigin);
+  },
+});
 
 const options = {
   disabled: false,
