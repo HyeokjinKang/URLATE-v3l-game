@@ -55,8 +55,7 @@ const client = createClient({
   },
   username: config.redis.username,
   password: config.redis.password,
-  // Without this, commands queue instead of throwing while disconnected, and
-  // every cookie-bearing request and socket handshake hangs until Redis returns.
+  // node-redis queues commands while disconnected unless this is set.
   disableOfflineQueue: true,
 });
 
@@ -69,9 +68,7 @@ const isProduction = config.project.mode !== "test";
 
 app.set("trust proxy", config.project.trustProxy ?? 1);
 
-// Must match the backend's cookie options: they share a session store, and
-// express-session's defaults would re-issue the session ID as an insecure
-// host-only cookie that masks the backend's.
+// Must match the backend's cookie options: both share one session store.
 const sessionMiddleware = session({
   store: redisStore,
   resave: config.session.resave ?? false,
@@ -83,7 +80,7 @@ const sessionMiddleware = session({
     httpOnly: true,
     secure: isProduction,
     sameSite: "lax",
-    maxAge: 1000 * 60 * 60 * 24 * 14, // 14 days, matching the backend.
+    maxAge: 1000 * 60 * 60 * 24 * 14,
   },
 });
 
@@ -93,8 +90,6 @@ app.disable("x-powered-by");
 
 app.use(express.json({ limit: "64kb" }));
 
-// Express 5 leaves req.body undefined when the parser can't handle a request
-// (Express 4 used {}), turning what should be a 400 into a TypeError 500.
 app.use((req, __, next) => {
   if (req.body === undefined) req.body = {};
   next();
@@ -110,9 +105,6 @@ client.on("error", (err) => {
   signale.error(err);
 });
 
-// Authenticates at the handshake. socket.use() only covers events after the
-// connection is established, so auth there would let an unauthenticated socket
-// write presence to Redis first.
 io.use((socket, next) => {
   const req = socket.request;
   if (!req.session?.userid) {
@@ -124,9 +116,6 @@ io.use((socket, next) => {
   next();
 });
 
-// Expiry for the presence keys (uid:*, sid:*). The disconnect handler normally
-// clears them, but an abnormal exit would leave them behind forever. Live
-// sockets renew on the interval below.
 const PRESENCE_TTL_SEC = 60 * 60;
 const PRESENCE_REFRESH_MS = (PRESENCE_TTL_SEC / 4) * 1000;
 const SESSION_CHECK_MS = 60 * 1000;
@@ -160,7 +149,6 @@ io.on("connection", async (socket) => {
       sessionCheck = undefined;
     }
     try {
-      // If another socket has already taken over this slot, don't clear its entry.
       if ((await client.get(`uid:${userid}`)) === socket.id) {
         await client.del(`uid:${userid}`);
       }
@@ -172,9 +160,6 @@ io.on("connection", async (socket) => {
     }
   };
 
-  // Registered before the await below: a drop during the Redis round trip fires
-  // disconnect in that window, and a later handler would never run, leaving the
-  // timer renewing a dead socket's TTL forever.
   socket.on("disconnect", async () => {
     await releasePresence();
     signale.disconnect(`User ${userid} disconnected with id ${socket.id}.`);
@@ -199,8 +184,6 @@ io.on("connection", async (socket) => {
     return;
   }
 
-  // Dropped during the round trip above means disconnect already ran; revert
-  // what was just written.
   if (!socket.connected) {
     await releasePresence();
     return;
@@ -208,9 +191,6 @@ io.on("connection", async (socket) => {
 
   signale.connect(`User ${userid} connected with id ${socket.id}.`);
 
-  // Renews the TTL while the connection is alive. Checks the socket itself
-  // rather than trusting the disconnect handler above, which any await between
-  // here and there could let run first.
   refresh = setInterval(() => {
     if (!socket.connected) {
       void releasePresence();
@@ -277,9 +257,7 @@ app.use((__, res) => {
   });
 });
 
-// Without this, Express's default handler puts a stack trace in the response
-// body. Express identifies an error handler by its 4-argument signature, so
-// next must stay.
+// Express detects error handlers by their 4-argument signature.
 app.use(
   (
     err: unknown,
@@ -315,22 +293,18 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
-// node-redis retries forever, so awaiting it directly would keep the port
-// from ever opening while Redis is down.
+// node-redis retries forever, so connect() may never settle.
 const REDIS_CONNECT_TIMEOUT_MS = 5000;
 
-// Force exit if shutdown doesn't finish in time; must be shorter than pm2's kill_timeout.
+// Must be shorter than pm2's kill_timeout.
 const SHUTDOWN_TIMEOUT_MS = 10000;
 
 const closeRedis = async () => {
   try {
-    // A reconnecting client can have isOpen true but never settle quit(), so
-    // only attempt it when isReady.
+    // quit() never settles on a reconnecting client.
     if (client.isReady) {
       await Promise.race([
         client.quit(),
-        // Don't use unref() here -- if every remaining handle is unref'd, the
-        // process could exit before this timer fires, cutting shutdown short.
         new Promise<void>((resolve) => setTimeout(resolve, 2000)),
       ]);
     }
@@ -340,7 +314,7 @@ const closeRedis = async () => {
   try {
     if (client.isOpen) client.destroy();
   } catch {
-    // Already closed.
+    return;
   }
 };
 
@@ -359,8 +333,6 @@ const start = async () => {
     signale.warn("Starting without redis. Sockets fail until it recovers.");
   }
 
-  // Loopback by default since a reverse proxy sits in front; a wildcard bind
-  // would expose the port directly regardless of firewall policy.
   const host = config.project.host ?? "127.0.0.1";
   httpServer.listen(config.project.port, host, () => {
     signale.success(`Game server running at ${host}:${config.project.port}.`);
