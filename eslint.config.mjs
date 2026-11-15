@@ -6,6 +6,7 @@ import prettier from "eslint-config-prettier/flat";
 
 export default defineConfig([
   {
+    // Build output and vendored files aren't lint targets.
     ignores: ["dist/**", "src/types/**"],
   },
   {
@@ -15,6 +16,9 @@ export default defineConfig([
     languageOptions: { globals: globals.node },
   },
   {
+    // typescript-eslint rules apply only to TS files. Applying them globally
+    // would swap base no-unused-vars for the TS version even in browser .js
+    // files, breaking existing suppression comments via the rule-name mismatch.
     files: ["**/*.{ts,mts,cts}"],
     extends: [tseslint.configs.recommended],
   },
