@@ -7,6 +7,8 @@ import { RedisStore } from "connect-redis";
 import session from "express-session";
 import { timingSafeEqual } from "crypto";
 
+import { registerPlaySession } from "./play-session";
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const config = require(__dirname + "/../config/config.json");
 
@@ -179,6 +181,8 @@ io.on("connection", async (socket) => {
     await releasePresence();
     signale.disconnect(`User ${userid} disconnected with id ${socket.id}.`);
   });
+
+  registerPlaySession(socket, String(userid), client, signale);
 
   try {
     const prevSid = await client.get(`uid:${userid}`);
